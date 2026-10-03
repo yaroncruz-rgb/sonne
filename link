@@ -1,0 +1,27 @@
+import google.generativeai as genai
+
+# Configure your API key
+genai.configure(api_key="YOUR_API_KEY")
+
+def recalibrate_text(input_text, config="Balanced", error_tol=15, logical_override="NONE"):
+    
+    system_prompt = f"""
+    [Insert the prompt block above here]
+    """
+    
+    # Replace variables dynamically in your processing loop
+    prompt = system_prompt.replace("{USER_CONFIG}", config)
+    prompt = prompt.replace("{ERROR_PERCENTAGE}", str(error_tol))
+    prompt = prompt.replace("{LOGICAL_OVERRIDE}", logical_override)
+    prompt = prompt.replace("{INPUT_TEXT}", input_text)
+
+    # Initialize model with system instruction (available in newer API versions)
+    model = genai.GenerativeModel('gemini-1.5-pro')
+    
+    response = model.generate_content(prompt)
+    return response.text
+
+# Example execution for an arithmetic process
+sample_data = "To calculate the final vector, first multiply the input matrix by the scalar value of 4. If the result is greater than 100, divide it by 2. Otherwise, leave it as is. Finally, add the baseline constant of 15 to all values."
+
+print(recalibrate_text(sample_data, config="Strict", error_tol=20))
