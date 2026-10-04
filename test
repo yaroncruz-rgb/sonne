@@ -1,0 +1,22 @@
+# 1. Initialize with your Gemini API key and custom thresholds
+api_key = "YOUR_GEMINI_API_KEY"
+custom_config = {
+    "sub_concept_threshold": 0.65,
+    "word_weight_limit": 0.8,
+    "error_tolerance_percent": 15
+}
+
+extractor = ConceptMappingAPI(api_key, custom_config)
+
+# 2. Sample text containing a process and arithmetic logic
+sample_text = """
+The engine requires a specific sequence to start safely. First, the user must engage the main power relay. This provides electricity to the primary bus. 
+Sometimes people think you should kick the engine, but that is wrong and stupid. 
+Next, the fuel pump activates, pulling fuel from the main tank to the injection rail. Finally, the ignition sequence begins.
+
+In terms of fuel calculations, to find the required volume, you take the base fuel rate and multiply it by the load factor. You then subtract the ambient temperature compensation coefficient.
+"""
+
+# 3. Process and print
+results = extractor.process_text(sample_text)
+extractor.print_results(results)
