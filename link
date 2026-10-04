@@ -1,27 +1,103 @@
 import google.generativeai as genai
+import json
+import textwrap
 
-# Configure your API key
-genai.configure(api_key="YOUR_API_KEY")
+class ConceptMappingAPI:
+    def __init__(self, api_key: str, config: dict):
+        """
+        Initializes the API with the LLM and user-defined constraints.
+        """
+        genai.configure(api_key=api_key)
+        # Using 1.5 Pro for complex reasoning and large context windows
+        self.model = genai.GenerativeModel('gemini-1.5-pro')
+        
+        # Default configuration
+        self.config = {
+            "sub_concept_threshold": 0.6, # Context limit to group paragraphs into a sub-concept
+            "concept_threshold": 0.4,     # Context limit to group sub-concepts into a concept
+            "chapter_threshold": 0.2,     # Context limit to group concepts into a chapter
+            "word_weight_limit": 0.7,     # Words below this contextual importance (0.0-1.0) are stripped
+            "error_tolerance_percent": 10 # Secondary filter: % of logical fallacies/noise to ignore
+        }
+        self.config.update(config)
 
-def recalibrate_text(input_text, config="Balanced", error_tol=15, logical_override="NONE"):
-    
-    system_prompt = f"""
-    [Insert the prompt block above here]
-    """
-    
-    # Replace variables dynamically in your processing loop
-    prompt = system_prompt.replace("{USER_CONFIG}", config)
-    prompt = prompt.replace("{ERROR_PERCENTAGE}", str(error_tol))
-    prompt = prompt.replace("{LOGICAL_OVERRIDE}", logical_override)
-    prompt = prompt.replace("{INPUT_TEXT}", input_text)
+    def _build_system_prompt(self) -> str:
+        return textwrap.dedent(f"""
+        You are an advanced text processing API. Your task is to analyze the provided text and output a structured analysis based STRICTLY on the following configuration limits:
+        - Sub-Concept grouping threshold: {self.config['sub_concept_threshold']}
+        - Concept grouping threshold: {self.config['concept_threshold']}
+        - Chapter grouping threshold: {self.config['chapter_threshold']}
+        - Word context weight limit: {self.config['word_weight_limit']}
+        - Error tolerance: Ignore up to {self.config['error_tolerance_percent']}% of logical fallacies or grammatical mistakes to process the main data.
 
-    # Initialize model with system instruction (available in newer API versions)
-    model = genai.GenerativeModel('gemini-1.5-pro')
-    
-    response = model.generate_content(prompt)
-    return response.text
+        EXECUTION STEPS:
+        1. Error Filter: Discard redundant noise and logical fallacies up to the allowed tolerance.
+        2. Distillation: Extract high-context words from paragraphs. Keep EXACT original wording for words scoring above {self.config['word_weight_limit']} in contextual weight. Remove all other words.
+        3. Hierarchy Grouping: Evaluate paragraphs. If they share context > {self.config['sub_concept_threshold']}, group them as a Sub-Concept. Group Sub-Concepts > {self.config['concept_threshold']} into Concepts. Group Concepts > {self.config['chapter_threshold']} into Chapters.
+        4. Process Detection: If a Concept explains a process, generate a strict ASCII flowchart. Each step must be one summarized sentence. If arithmetic, use ONLY numbers and symbols (no words).
 
-# Example execution for an arithmetic process
-sample_data = "To calculate the final vector, first multiply the input matrix by the scalar value of 4. If the result is greater than 100, divide it by 2. Otherwise, leave it as is. Finally, add the baseline constant of 15 to all values."
+        OUTPUT FORMAT:
+        Provide a JSON object containing:
+        {{
+            "hierarchy": [
+                {{
+                    "chapter_name": "...",
+                    "concepts": [
+                        {{
+                            "concept_name": "...",
+                            "sub_concepts": [
+                                {{
+                                    "sub_concept_name": "...",
+                                    "distilled_text": "keyword1 keyword2 ...", 
+                                    "is_process": true/false
+                                }}
+                            ]
+                        }}
+                    ]
+                }}
+            ],
+            "ascii_flowcharts": [
+                "Raw ASCII string here (if is_process is true)"
+            ]
+        }}
+        """)
 
-print(recalibrate_text(sample_data, config="Strict", error_tol=20))
+    def process_text(self, text_input: str) -> dict:
+        """
+        Sends the text and configuration to the LLM for processing.
+        """
+        prompt = self._build_system_prompt() + f"\n\nINPUT TEXT:\n{text_input}"
+        
+        try:
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    response_mime_type="application/json",
+                    temperature=0.1 # Low temperature for strict analytical adherence
+                )
+            )
+            return json.loads(response.text)
+        except Exception as e:
+            return {"error": str(e)}
+
+    def print_results(self, result: dict):
+        """
+        Helper method to nicely format and print the LLM output.
+        """
+        if "error" in result:
+            print(f"Error: {result['error']}")
+            return
+
+        print("=== CONCEPT HIERARCHY ===")
+        for chapter in result.get("hierarchy", []):
+            print(f"📘 Chapter: {chapter['chapter_name']}")
+            for concept in chapter.get("concepts", []):
+                print(f"  📄 Concept: {concept['concept_name']}")
+                for sub in concept.get("sub_concepts", []):
+                    print(f"    - Sub-Concept: {sub['sub_concept_name']}")
+                    print(f"      Distilled: {sub['distilled_text']}")
+                    
+        print("\n=== ASCII FLOWCHARTS ===")
+        for chart in result.get("ascii_flowcharts", []):
+            print(chart)
+            print("\n")
